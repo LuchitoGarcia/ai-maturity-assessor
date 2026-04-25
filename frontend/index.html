@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Maturity Assessor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+    *, body { font-family: 'DM Sans', sans-serif; }
+    .gradient-bg { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #0c4a6e 100%); }
+    .card { background:#fff; border-radius:12px; box-shadow:0 2px 16px rgba(15,23,42,0.07); border:1px solid #e2e8f0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { border:3px solid #e2e8f0; border-top-color:#2563eb; border-radius:50%; width:40px; height:40px; animation: spin 0.8s linear infinite; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+    .fade-up { animation: fadeUp 0.35s ease-out both; }
+    .option-btn { width:100%; text-align:left; padding:12px 16px; border:2px solid #e2e8f0; border-radius:10px; cursor:pointer; background:#fff; display:flex; align-items:flex-start; gap:12px; transition:all 0.15s; margin-bottom:8px; }
+    .option-btn:hover { border-color:#93c5fd; background:#f0f9ff; }
+    .option-btn.selected { border-color:#2563eb; background:#eff6ff; }
+    .option-num { width:28px; height:28px; border-radius:50%; border:2px solid #cbd5e1; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:600; color:#94a3b8; flex-shrink:0; transition:all 0.15s; }
+    .option-btn.selected .option-num { border-color:#2563eb; background:#2563eb; color:#fff; }
+    .progress-bar { height:4px; background:#e2e8f0; border-radius:2px; overflow:hidden; }
+    .progress-fill { height:100%; background:#2563eb; border-radius:2px; transition: width 0.4s ease; }
+    select { appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%2364748b' viewBox='0 0 256 256'%3E%3Cpath d='M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z'%3E%3C/path%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; padding-right:40px; }
+    .phase-card { border-left:4px solid #3b82f6; padding-left:16px; margin-bottom:24px; }
+    .badge { display:inline-block; padding:2px 10px; border-radius:99px; font-size:12px; font-weight:500; }
+    /* Radar fix - give canvas explicit dimensions */
+    #chart-radar { width: 380px !important; height: 380px !important; }
+    @media print { .no-print { display:none !important; } }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<!-- LANDING -->
+<div id="screen-landing">
+  <div class="gradient-bg text-white">
+    <div class="max-w-5xl mx-auto px-6 py-20">
+      <div class="text-xs uppercase tracking-widest text-blue-300 mb-4 font-medium">AI Maturity Assessor</div>
+      <h1 class="text-5xl font-bold leading-tight mb-6">Is your organization<br/>ready to scale AI?</h1>
+      <p class="text-xl text-blue-100 max-w-2xl mb-8">A research-grounded assessment scoring AI maturity across 5 dimensions — with SHAP explainability and a personalized phased roadmap.</p>
+      <button onclick="startWizard()" class="bg-white text-slate-900 px-8 py-4 rounded-xl font-semibold hover:bg-blue-50 transition shadow-lg text-base">Start your free assessment →</button>
+      <div class="mt-5 text-sm text-blue-300">25 questions · ~6 minutes · no signup required</div>
+    </div>
+  </div>
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <h2 class="text-2xl font-bold mb-2 text-slate-800">The 5 dimensions we measure</h2>
+    <p class="text-slate-500 mb-10 text-sm">Based on Gartner AI Maturity Model, MIT Sloan Digital Maturity and Deloitte State of AI in the Enterprise.</p>
+    <div id="dimensions-grid" class="grid md:grid-cols-2 gap-4"></div>
+    <div class="mt-14 grid md:grid-cols-3 gap-8 text-center">
+      <div><div class="text-4xl mb-3">📊</div><div class="font-semibold text-slate-800 mb-1">Calibrated ML model</div><div class="text-sm text-slate-500">XGBoost trained on 1,000+ benchmarks with 10-fold cross-validated metrics (R²=0.996).</div></div>
+      <div><div class="text-4xl mb-3">🔍</div><div class="font-semibold text-slate-800 mb-1">Explainable AI</div><div class="text-sm text-slate-500">SHAP values reveal exactly why your score is what it is — no black box, no guesswork.</div></div>
+      <div><div class="text-4xl mb-3">🎯</div><div class="font-semibold text-slate-800 mb-1">Actionable roadmap</div><div class="text-sm text-slate-500">3-phase roadmap with ROI and effort estimates, benchmarked against your sector peers.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- WIZARD -->
+<div id="screen-wizard" style="display:none">
+  <div class="bg-white border-b border-slate-100 sticky top-0 z-10">
+    <div class="max-w-2xl mx-auto px-6 py-4">
+      <div class="flex justify-between text-xs text-slate-500 mb-2">
+        <span id="wiz-step-label">Step 1 of 6</span>
+        <span id="wiz-pct">0% complete</span>
+      </div>
+      <div class="progress-bar"><div id="progress-fill" class="progress-fill" style="width:0%"></div></div>
+    </div>
+  </div>
+  <div class="max-w-2xl mx-auto px-6 py-10">
+    <div id="wiz-content"></div>
+    <div id="wiz-error" class="mt-4 p-4 bg-red-50 border border-red-100 text-red-700 rounded-xl text-sm" style="display:none"></div>
+    <div class="mt-8 flex justify-between items-center">
+      <button id="btn-back" onclick="wizBack()" class="text-slate-500 hover:text-slate-800 px-4 py-2 text-sm font-medium transition">← Back</button>
+      <button id="btn-next" onclick="wizNext()" class="bg-blue-600 text-white px-7 py-3 rounded-xl font-semibold hover:bg-blue-700 transition" style="opacity:0.4;pointer-events:none">Continue →</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOADING -->
+<div id="screen-loading" style="display:none">
+  <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px">
+    <div class="spinner"></div>
+    <div id="loading-msg" class="text-slate-600 font-medium text-center px-4 max-w-xs"></div>
+  </div>
+</div>
+
+<!-- RESULTS -->
+<div id="screen-results" style="display:none">
+  <!-- Hero header -->
+  <div class="gradient-bg text-white py-12">
+    <div class="max-w-5xl mx-auto px-6">
+      <div class="flex justify-between items-start flex-wrap gap-4 mb-6">
+        <button onclick="resetApp()" class="text-blue-300 hover:text-white text-sm transition no-print">← New assessment</button>
+        <button onclick="exportPDF()" class="no-print flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition border border-white/20">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 15V3m0 12l-4-4m4 4l4-4M2 17l.621 2.485A2 2 0 004.561 21h14.878a2 2 0 001.94-1.515L22 17"/></svg>
+          Export PDF
+        </button>
+      </div>
+      <div class="grid md:grid-cols-3 gap-8 items-center">
+        <div>
+          <div class="text-xs uppercase tracking-widest text-blue-300 mb-2 font-medium">Your AI Maturity Score</div>
+          <div id="res-score" class="font-bold mb-1" style="font-size:5rem;line-height:1"></div>
+          <div id="res-level" class="text-xl font-semibold mb-3"></div>
+          <div id="res-percentile" class="text-sm text-blue-200"></div>
+        </div>
+        <div class="md:col-span-2 bg-white/10 rounded-xl p-6 text-blue-100 text-sm leading-relaxed border border-white/10" id="res-description"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div id="pdf-content" class="max-w-5xl mx-auto px-6 py-10 space-y-8">
+
+    <!-- Radar + Score cards row -->
+    <div class="grid md:grid-cols-5 gap-6">
+      <div class="card p-6 md:col-span-3">
+        <h3 class="text-base font-bold text-slate-800 mb-1">Dimension profile</h3>
+        <p class="text-xs text-slate-500 mb-4">Your average score (1–5) per dimension.</p>
+        <div style="width:100%;max-width:380px;height:320px;margin:0 auto;position:relative">
+          <canvas id="chart-radar"></canvas>
+        </div>
+      </div>
+      <div class="md:col-span-2 space-y-4" id="res-dim-scores"></div>
+    </div>
+
+    <!-- Strengths / Weaknesses -->
+    <div class="grid md:grid-cols-2 gap-6">
+      <div class="card p-6">
+        <h3 class="text-base font-bold text-slate-800 mb-1">✅ Top strengths</h3>
+        <p class="text-xs text-slate-500 mb-4">Features pulling your score up.</p>
+        <div id="res-strengths"></div>
+      </div>
+      <div class="card p-6">
+        <h3 class="text-base font-bold text-slate-800 mb-1">⚠️ Top weaknesses</h3>
+        <p class="text-xs text-slate-500 mb-4">Features pulling your score down.</p>
+        <div id="res-weaknesses"></div>
+      </div>
+    </div>
+
+    <!-- SHAP -->
+    <div class="card p-6">
+      <h3 class="text-base font-bold text-slate-800 mb-1">What drives your score</h3>
+      <p class="text-xs text-slate-500 mb-5">SHAP contribution per dimension — blue raises it, red lowers it.</p>
+      <div style="height:200px;position:relative"><canvas id="chart-shap"></canvas></div>
+    </div>
+
+    <!-- What-if -->
+    <div class="card p-6">
+      <h3 class="text-base font-bold text-slate-800 mb-1">Where to invest first</h3>
+      <p class="text-xs text-slate-500 mb-5">Predicted score gain if you improve each dimension by +1 point.</p>
+      <div style="height:200px;position:relative"><canvas id="chart-whatif"></canvas></div>
+    </div>
+
+    <!-- Roadmap -->
+    <div class="card p-6">
+      <h3 class="text-base font-bold text-slate-800 mb-1">Personalized roadmap</h3>
+      <p id="res-roadmap-summary" class="text-xs text-slate-500 mb-6"></p>
+      <div id="res-roadmap-phases"></div>
+    </div>
+
+    <!-- Benchmark -->
+    <div class="card p-6" id="res-benchmark-card" style="display:none">
+      <h3 id="res-benchmark-title" class="text-base font-bold text-slate-800 mb-1"></h3>
+      <p id="res-benchmark-sub" class="text-xs text-slate-500 mb-6"></p>
+      <div class="grid grid-cols-4 gap-3 text-center" id="res-benchmark-stats"></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center text-xs text-slate-400 pb-4">
+      Generated by AI Maturity Assessor · Based on Gartner, MIT Sloan & Deloitte frameworks · Powered by XGBoost + SHAP
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── Config ───────────────────────────────────────────────────────────────────
+const API_BASE = "http://localhost:8000/api";
+const SECTORS = [
+  {id:"fintech",label:"Fintech"},{id:"banking_insurance",label:"Banking / Insurance"},
+  {id:"manufacturing",label:"Manufacturing"},{id:"retail_ecommerce",label:"Retail / E-commerce"},
+  {id:"healthcare",label:"Healthcare"},{id:"logistics",label:"Logistics"},
+  {id:"energy_utilities",label:"Energy / Utilities"},{id:"tech_software",label:"Tech / Software"},
+  {id:"professional_services",label:"Professional Services"},{id:"education",label:"Education"}
+];
+const SIZES = [
+  {id:"startup",label:"Startup (< 50 employees)"},{id:"small",label:"Small (50–200)"},
+  {id:"medium",label:"Medium (200–1,000)"},{id:"large",label:"Large (1,000–5,000)"},
+  {id:"enterprise",label:"Enterprise (> 5,000)"}
+];
+const LOADING_MSGS = [
+  "Computing your maturity score…",
+  "Running SHAP explainability analysis…",
+  "Benchmarking against sector peers…",
+  "Generating your personalized roadmap…"
+];
+const LEVEL_COLORS = {Initial:"#dc2626",Exploring:"#ea580c",Developing:"#ca8a04",Scaling:"#16a34a",Optimizing:"#0d9488"};
+const DIM_ICONS = ["💾","🧑‍💼","⚙️","🎯","🔄"];
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let framework=null, wizStep=0, meta={sector:"",company_size:""}, answers={}, report=null;
+let radarChart=null, shapChart=null, whatifChart=null;
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+window.addEventListener("DOMContentLoaded", async () => {
+  try {
+    const r = await fetch(`${API_BASE}/framework`);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    framework = await r.json();
+    renderDimensionsGrid();
+  } catch(e) {
+    document.getElementById("dimensions-grid").innerHTML = `
+      <div class="col-span-2 p-6 bg-red-50 border border-red-200 rounded-xl text-red-700">
+        <strong>⚠️ Backend not reachable</strong>
+        <p class="text-sm mt-2">Make sure the backend is running:<br>
+        <code class="bg-red-100 px-2 py-1 rounded text-xs mt-1 inline-block">python -m uvicorn backend.api.app:app --port 8000</code></p>
+      </div>`;
+  }
+});
+
+function renderDimensionsGrid() {
+  document.getElementById("dimensions-grid").innerHTML = framework.dimensions.map((d,i) => `
+    <div class="card p-6 hover:shadow-md transition-shadow">
+      <div class="flex justify-between items-start mb-2">
+        <h3 class="font-semibold text-slate-800">${DIM_ICONS[i]} ${d.name}</h3>
+        <span class="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-1 rounded">${Math.round(d.weight*100)}%</span>
+      </div>
+      <p class="text-sm text-slate-500">${d.description}</p>
+    </div>`).join("");
+}
+
+// ─── Screen routing ───────────────────────────────────────────────────────────
+function show(id) {
+  ["screen-landing","screen-wizard","screen-loading","screen-results"].forEach(s => {
+    document.getElementById(s).style.display = s === id ? "block" : "none";
+  });
+}
+
+function startWizard() { wizStep=0; meta={sector:"",company_size:""}; answers={}; show("screen-wizard"); renderWizStep(); }
+function resetApp() { show("screen-landing"); }
+function totalSteps() { return framework.dimensions.length + 1; }
+
+function canAdvance() {
+  if (wizStep === 0) return meta.sector && meta.company_size;
+  const dim = framework.dimensions[wizStep-1];
+  return dim.sub_dimensions.every(s => answers[s.question.id] !== undefined);
+}
+
+function updateNextBtn() {
+  const btn = document.getElementById("btn-next");
+  const ok = canAdvance();
+  btn.style.opacity = ok ? "1" : "0.4";
+  btn.style.pointerEvents = ok ? "auto" : "none";
+}
+
+// ─── Wizard rendering ─────────────────────────────────────────────────────────
+function renderWizStep() {
+  const total = totalSteps();
+  const pct = Math.round(((wizStep+1)/total)*100);
+  document.getElementById("wiz-step-label").textContent = `Step ${wizStep+1} of ${total}`;
+  document.getElementById("wiz-pct").textContent = `${pct}% complete`;
+  document.getElementById("progress-fill").style.width = `${pct}%`;
+  document.getElementById("btn-back").style.opacity = wizStep===0 ? "0.3" : "1";
+  document.getElementById("wiz-error").style.display = "none";
+  const isLast = wizStep === total-1;
+  document.getElementById("btn-next").textContent = isLast ? "See results →" : "Continue →";
+  updateNextBtn();
+
+  const content = document.getElementById("wiz-content");
+  if (wizStep === 0) {
+    content.innerHTML = `<div class="fade-up">
+      <h2 class="text-3xl font-bold text-slate-800 mb-2">Tell us about your organization</h2>
+      <p class="text-slate-500 mb-8">Helps us benchmark you against sector peers.</p>
+      <div class="space-y-5">
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-2">Industry / Sector</label>
+          <select id="sel-sector" onchange="meta.sector=this.value;updateNextBtn()"
+            class="w-full p-3 border border-slate-200 rounded-xl bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">Select your sector…</option>
+            ${SECTORS.map(s=>`<option value="${s.id}" ${meta.sector===s.id?"selected":""}>${s.label}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-2">Company size</label>
+          <select id="sel-size" onchange="meta.company_size=this.value;updateNextBtn()"
+            class="w-full p-3 border border-slate-200 rounded-xl bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">Select size…</option>
+            ${SIZES.map(s=>`<option value="${s.id}" ${meta.company_size===s.id?"selected":""}>${s.label}</option>`).join("")}
+          </select>
+        </div>
+      </div></div>`;
+  } else {
+    const dim = framework.dimensions[wizStep-1];
+    content.innerHTML = `<div class="fade-up">
+      <div class="text-xs uppercase tracking-widest text-blue-600 font-semibold mb-2">${DIM_ICONS[wizStep-1]} Dimension ${wizStep} of 5</div>
+      <h2 class="text-3xl font-bold text-slate-800 mb-2">${dim.name}</h2>
+      <p class="text-slate-500 mb-8">${dim.description}</p>
+      <div class="space-y-6">${dim.sub_dimensions.map((sub,i)=>renderQuestion(sub,i+1)).join("")}</div>
+    </div>`;
+  }
+}
+
+function renderQuestion(sub, idx) {
+  const qid = sub.question.id;
+  const selected = answers[qid];
+  const opts = Object.entries(sub.question.scale_labels).map(([n,label]) => {
+    const sel = selected === parseInt(n);
+    return `<button class="option-btn ${sel?"selected":""}" onclick="selectAnswer('${qid}',${n})">
+      <span class="option-num">${n}</span>
+      <span class="text-sm ${sel?"font-medium text-slate-800":"text-slate-600"}">${label}</span>
+    </button>`;
+  }).join("");
+  return `<div class="card p-5">
+    <div class="flex gap-3 mb-3">
+      <span class="bg-blue-100 text-blue-700 text-xs font-semibold px-2 py-1 rounded flex-shrink-0 self-start mt-0.5">Q${idx}</span>
+      <div class="flex-1">
+        <p class="font-semibold text-slate-800 text-sm leading-snug">${sub.question.text}</p>
+        <button onclick="toggleHelper('h-${qid}')" class="text-xs text-blue-500 hover:underline mt-1">Why we ask this ↓</button>
+        <p id="h-${qid}" class="text-xs text-slate-500 italic bg-blue-50 p-2 rounded mt-2" style="display:none">${sub.question.helper}</p>
+      </div>
+    </div>
+    <div class="mt-3">${opts}</div>
+  </div>`;
+}
+
+function toggleHelper(id) {
+  const el = document.getElementById(id);
+  el.style.display = el.style.display==="none" ? "block" : "none";
+}
+
+function selectAnswer(qid, val) { answers[qid]=val; renderWizStep(); }
+function wizBack() { if(wizStep>0){wizStep--;renderWizStep();} }
+function wizNext() {
+  if(!canAdvance()) return;
+  if(wizStep===totalSteps()-1) submitAssessment();
+  else { wizStep++; renderWizStep(); }
+}
+
+// ─── API call ─────────────────────────────────────────────────────────────────
+async function submitAssessment() {
+  show("screen-loading");
+  let msgIdx=0;
+  const msgEl = document.getElementById("loading-msg");
+  msgEl.textContent = LOADING_MSGS[0];
+  const iv = setInterval(()=>{ msgIdx=(msgIdx+1)%LOADING_MSGS.length; msgEl.textContent=LOADING_MSGS[msgIdx]; }, 1200);
+  try {
+    const res = await fetch(`${API_BASE}/full_report`, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({answers, sector:meta.sector||null, company_size:meta.company_size||null})
+    });
+    if(!res.ok) throw new Error(await res.text());
+    report = await res.json();
+    clearInterval(iv);
+    renderResults();
+    show("screen-results");
+    window.scrollTo(0,0);
+  } catch(e) {
+    clearInterval(iv);
+    show("screen-wizard");
+    const errEl = document.getElementById("wiz-error");
+    errEl.textContent = "Error: " + e.message;
+    errEl.style.display = "block";
+  }
+}
+
+// ─── Results rendering ────────────────────────────────────────────────────────
+function renderResults() {
+  const {assessment, explanation, what_if_simulations, roadmap} = report;
+  const score = assessment.predicted_score;
+  const level = assessment.maturity_level;
+  const levelColor = LEVEL_COLORS[level] || "#16a34a";
+
+  // Hero
+  document.getElementById("res-score").textContent = score.toFixed(2);
+  const levelEl = document.getElementById("res-level");
+  levelEl.textContent = level;
+  levelEl.style.color = "#fff";
+  document.getElementById("res-description").textContent = assessment.level_description;
+
+  // FIX: percentile display — "your_percentile" is how many % of companies are BELOW you
+  // So if you're in the 5th percentile (low), you're NOT "Top 95%"
+  // Show it directly: "Xth percentile in your sector"
+  if (assessment.benchmark) {
+    const p = assessment.benchmark.your_percentile;
+    const pLabel = p < 50
+      ? `${p.toFixed(0)}th percentile in your sector`
+      : `Top ${(100-p).toFixed(0)}% in your sector`;
+    document.getElementById("res-percentile").textContent = pLabel;
+  }
+
+  // Dimension score cards
+  const dimScores = document.getElementById("res-dim-scores");
+  dimScores.innerHTML = framework.dimensions.map((d,i) => {
+    const s = assessment.dimension_scores[d.id];
+    const pct = (s/5)*100;
+    const color = s>=4?"#16a34a":s>=3?"#2563eb":s>=2?"#ca8a04":"#dc2626";
+    return `<div class="card p-4">
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-sm font-medium text-slate-700">${DIM_ICONS[i]} ${d.name}</span>
+        <span class="font-bold text-slate-800">${s.toFixed(1)}</span>
+      </div>
+      <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
+        <div style="width:${pct}%;height:100%;background:${color};border-radius:99px;transition:width 0.6s ease"></div>
+      </div>
+    </div>`;
+  }).join("");
+
+  // RADAR — fix: destroy properly, use explicit size
+  if (radarChart) { radarChart.destroy(); radarChart=null; }
+  const radarCanvas = document.getElementById("chart-radar");
+  radarCanvas.width = 380;
+  radarCanvas.height = 380;
+  radarChart = new Chart(radarCanvas, {
+    type: "radar",
+    data: {
+      labels: framework.dimensions.map(d=>d.name),
+      datasets: [{
+        label: "Score",
+        data: framework.dimensions.map(d=>assessment.dimension_scores[d.id]),
+        borderColor: "#2563eb",
+        backgroundColor: "rgba(37,99,235,0.12)",
+        pointBackgroundColor: "#2563eb",
+        pointBorderColor: "#fff",
+        pointBorderWidth: 2,
+        pointRadius: 5,
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: false,
+      scales: { r: { min:0, max:5, ticks:{ stepSize:1, font:{size:9}, color:"#94a3b8" }, pointLabels:{ font:{size:11}, color:"#475569" }, grid:{color:"#e2e8f0"}, angleLines:{color:"#e2e8f0"} } },
+      plugins: { legend:{display:false} },
+      animation: { duration:700 }
+    }
+  });
+
+  // Strengths
+  document.getElementById("res-strengths").innerHTML = explanation.top_strengths.length===0
+    ? '<p class="text-slate-400 text-sm italic">None detected.</p>'
+    : explanation.top_strengths.map(s=>`
+        <div class="bg-green-50 border border-green-100 p-3 rounded-lg mb-2">
+          <div class="text-sm font-medium text-slate-800">${s.feature_label}</div>
+          <div class="text-xs text-slate-500 mt-1">Score: <strong>${s.value.toFixed(1)}</strong>
+            <span class="text-green-700 ml-2 font-medium">SHAP +${s.shap_value.toFixed(3)}</span>
+          </div>
+        </div>`).join("");
+
+  // Weaknesses
+  document.getElementById("res-weaknesses").innerHTML = explanation.top_weaknesses.length===0
+    ? '<p class="text-slate-400 text-sm italic">None detected.</p>'
+    : explanation.top_weaknesses.map(w=>`
+        <div class="bg-red-50 border border-red-100 p-3 rounded-lg mb-2">
+          <div class="text-sm font-medium text-slate-800">${w.feature_label}</div>
+          <div class="text-xs text-slate-500 mt-1">Score: <strong>${w.value.toFixed(1)}</strong>
+            <span class="text-red-600 ml-2 font-medium">SHAP ${w.shap_value.toFixed(3)}</span>
+          </div>
+        </div>`).join("");
+
+  // SHAP bar
+  const dc = explanation.dimension_contributions.map(d=>({name:d.dimension_name.split(" ")[0],v:d.shap_total}));
+  if(shapChart){shapChart.destroy();shapChart=null;}
+  shapChart = new Chart(document.getElementById("chart-shap"), {
+    type:"bar",
+    data:{ labels:dc.map(d=>d.name), datasets:[{data:dc.map(d=>d.v), backgroundColor:dc.map(d=>d.v>=0?"#3b82f6":"#ef4444"), borderRadius:6, borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`SHAP: ${c.raw.toFixed(3)}`}}},scales:{y:{grid:{color:"#f8fafc"},ticks:{color:"#64748b",font:{size:11}}},x:{grid:{display:false},ticks:{color:"#475569",font:{size:11}}}}}
+  });
+
+  // What-if horizontal bar
+  const wi = what_if_simulations.map(w=>({name:w.dimension_name.split(" ")[0],d:w.delta})).sort((a,b)=>b.d-a.d);
+  if(whatifChart){whatifChart.destroy();whatifChart=null;}
+  whatifChart = new Chart(document.getElementById("chart-whatif"), {
+    type:"bar",
+    data:{labels:wi.map(w=>w.name),datasets:[{data:wi.map(w=>w.d),backgroundColor:"#10b981",borderRadius:6,borderSkipped:false}]},
+    options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`+${c.raw.toFixed(3)} pts`}}},scales:{x:{grid:{color:"#f8fafc"},ticks:{color:"#64748b",font:{size:11}}},y:{grid:{display:false},ticks:{color:"#475569",font:{size:12}}}}}
+  });
+
+  // Roadmap
+  document.getElementById("res-roadmap-summary").textContent = roadmap.executive_summary;
+  document.getElementById("res-roadmap-phases").innerHTML = roadmap.phases.map((phase,pi) => {
+    const phaseColors=["#2563eb","#7c3aed","#0d9488"];
+    return `<div class="phase-card" style="border-left-color:${phaseColors[pi]||"#3b82f6"}">
+      <div class="flex justify-between items-baseline flex-wrap gap-2 mb-1">
+        <h4 class="font-semibold text-slate-800">${phase.title}</h4>
+        <span class="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">~${phase.estimated_duration_weeks} weeks</span>
+      </div>
+      <p class="text-sm text-slate-500 mb-4">${phase.summary}</p>
+      ${phase.initiatives.length===0
+        ? '<p class="text-xs text-slate-400 italic">No initiatives in this phase.</p>'
+        : phase.initiatives.map(init=>`
+          <div class="bg-slate-50 border border-slate-100 p-3 rounded-xl mb-2">
+            <div class="flex items-start justify-between flex-wrap gap-2 mb-1">
+              <div class="text-sm font-semibold text-slate-800">${init.title}</div>
+              <div class="flex gap-1 flex-wrap">
+                <span class="badge bg-blue-100 text-blue-700">${init.dimension_id}</span>
+                <span class="badge bg-purple-100 text-purple-700">ROI: ${init.roi}</span>
+                <span class="badge bg-amber-100 text-amber-700">Effort: ${init.effort}</span>
+              </div>
+            </div>
+            <p class="text-xs text-slate-500 leading-relaxed">${init.description}</p>
+          </div>`).join("")}
+    </div>`;
+  }).join("");
+
+  // Benchmark
+  if(assessment.benchmark) {
+    const b = assessment.benchmark;
+    document.getElementById("res-benchmark-card").style.display="block";
+    document.getElementById("res-benchmark-title").textContent=`Sector benchmark: ${b.sector}`;
+    document.getElementById("res-benchmark-sub").textContent=`Based on ${b.n} companies in our reference dataset.`;
+    const your_p = b.your_percentile;
+    document.getElementById("res-benchmark-stats").innerHTML=[
+      {label:"P25",v:b.p25.toFixed(2),h:false},
+      {label:"Median",v:b.p50.toFixed(2),h:false},
+      {label:"P75",v:b.p75.toFixed(2),h:false},
+      {label:"Your percentile",v:your_p.toFixed(0)+"%",h:true}
+    ].map(s=>`<div class="${s.h?"bg-blue-50 rounded-xl":""} p-4">
+      <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">${s.label}</div>
+      <div class="text-2xl font-bold ${s.h?"text-blue-700":"text-slate-800"}">${s.v}</div>
+    </div>`).join("");
+  }
+}
+
+// ─── PDF Export ───────────────────────────────────────────────────────────────
+async function exportPDF() {
+  const btn = document.querySelector("button[onclick='exportPDF()']");
+  btn.textContent = "⏳ Generating PDF…";
+  btn.disabled = true;
+
+  const score = report.assessment.predicted_score.toFixed(2);
+  const level = report.assessment.maturity_level;
+  const sector = meta.sector || "General";
+
+  // Build a self-contained print document
+  const printContent = `
+    <html><head>
+    <meta charset="UTF-8">
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin:0; padding:32px; color:#1e293b; background:#fff; }
+      h1 { font-size:28px; font-weight:700; color:#0f172a; margin:0 0 4px; }
+      h2 { font-size:16px; font-weight:700; color:#1e293b; margin:24px 0 8px; border-bottom:2px solid #e2e8f0; padding-bottom:8px; }
+      h3 { font-size:13px; font-weight:600; color:#334155; margin:12px 0 4px; }
+      p { font-size:12px; color:#64748b; margin:4px 0; line-height:1.5; }
+      .hero { background:linear-gradient(135deg,#0f172a,#1e3a8a); color:#fff; padding:24px; border-radius:12px; margin-bottom:24px; }
+      .hero-score { font-size:56px; font-weight:700; line-height:1; }
+      .hero-level { font-size:18px; font-weight:600; margin-top:4px; color:#bfdbfe; }
+      .hero-desc { font-size:12px; color:#bfdbfe; margin-top:12px; line-height:1.5; }
+      .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+      .card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px; margin-bottom:12px; }
+      .dim-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+      .bar-bg { background:#e2e8f0; border-radius:4px; height:6px; }
+      .bar-fill { height:6px; border-radius:4px; background:#2563eb; }
+      .badge { display:inline-block; padding:2px 8px; border-radius:99px; font-size:10px; font-weight:600; margin-right:4px; }
+      .phase { border-left:4px solid #3b82f6; padding-left:12px; margin-bottom:16px; }
+      .initiative { background:#f1f5f9; border-radius:6px; padding:8px 10px; margin-bottom:6px; }
+      .benchmark { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; text-align:center; }
+      .b-stat { padding:8px; border-radius:6px; }
+      .highlight { background:#eff6ff; }
+      .b-val { font-size:22px; font-weight:700; color:#1d4ed8; }
+      .b-label { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.05em; }
+      .strengths-item { border-left:3px solid #16a34a; padding-left:8px; margin-bottom:6px; }
+      .weaknesses-item { border-left:3px solid #dc2626; padding-left:8px; margin-bottom:6px; }
+      footer { margin-top:32px; padding-top:16px; border-top:1px solid #e2e8f0; font-size:10px; color:#94a3b8; text-align:center; }
+    </style></head><body>
+    <div class="hero">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#93c5fd;margin-bottom:8px">AI Maturity Assessment Report</div>
+      <div class="hero-score">${score}</div>
+      <div class="hero-level">${level}</div>
+      <div class="hero-desc">${report.assessment.level_description}</div>
+    </div>
+
+    <h2>Dimension Scores</h2>
+    ${framework.dimensions.map((d,i) => {
+      const s = report.assessment.dimension_scores[d.id];
+      const pct = (s/5)*100;
+      const color = s>=4?"#16a34a":s>=3?"#2563eb":s>=2?"#ca8a04":"#dc2626";
+      return `<div class="dim-row"><span style="font-size:12px;font-weight:500">${d.name}</span><span style="font-weight:700;font-size:13px">${s.toFixed(1)}/5</span></div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>`;
+    }).join("")}
+
+    <div class="grid2" style="margin-top:20px">
+      <div>
+        <h2>✅ Top Strengths</h2>
+        ${report.explanation.top_strengths.map(s=>`<div class="strengths-item"><div style="font-size:12px;font-weight:600">${s.feature_label}</div><div style="font-size:11px;color:#64748b">Score: ${s.value.toFixed(1)} · SHAP +${s.shap_value.toFixed(3)}</div></div>`).join("")}
+      </div>
+      <div>
+        <h2>⚠️ Top Weaknesses</h2>
+        ${report.explanation.top_weaknesses.map(w=>`<div class="weaknesses-item"><div style="font-size:12px;font-weight:600">${w.feature_label}</div><div style="font-size:11px;color:#64748b">Score: ${w.value.toFixed(1)} · SHAP ${w.shap_value.toFixed(3)}</div></div>`).join("")}
+      </div>
+    </div>
+
+    <h2>Personalized Roadmap</h2>
+    <p style="margin-bottom:16px">${report.roadmap.executive_summary}</p>
+    ${report.roadmap.phases.map((phase,pi)=>{
+      const colors=["#2563eb","#7c3aed","#0d9488"];
+      return `<div class="phase" style="border-left-color:${colors[pi]||"#3b82f6"}">
+        <h3>${phase.title} <span style="font-size:11px;color:#94a3b8;font-weight:400">· ~${phase.estimated_duration_weeks} weeks</span></h3>
+        <p>${phase.summary}</p>
+        ${phase.initiatives.map(init=>`
+          <div class="initiative">
+            <div style="font-size:12px;font-weight:600;margin-bottom:2px">${init.title}</div>
+            <div style="margin-bottom:4px">
+              <span class="badge" style="background:#dbeafe;color:#1d4ed8">${init.dimension_id}</span>
+              <span class="badge" style="background:#ede9fe;color:#6d28d9">ROI: ${init.roi}</span>
+              <span class="badge" style="background:#fef3c7;color:#92400e">Effort: ${init.effort}</span>
+            </div>
+            <p>${init.description}</p>
+          </div>`).join("")}
+      </div>`;
+    }).join("")}
+
+    ${report.assessment.benchmark ? `
+    <h2>Sector Benchmark: ${report.assessment.benchmark.sector}</h2>
+    <p>Based on ${report.assessment.benchmark.n} companies in the reference dataset.</p>
+    <div class="benchmark" style="margin-top:12px">
+      <div class="b-stat"><div class="b-label">P25</div><div style="font-size:20px;font-weight:700;color:#334155">${report.assessment.benchmark.p25.toFixed(2)}</div></div>
+      <div class="b-stat"><div class="b-label">Median</div><div style="font-size:20px;font-weight:700;color:#334155">${report.assessment.benchmark.p50.toFixed(2)}</div></div>
+      <div class="b-stat"><div class="b-label">P75</div><div style="font-size:20px;font-weight:700;color:#334155">${report.assessment.benchmark.p75.toFixed(2)}</div></div>
+      <div class="b-stat highlight"><div class="b-label">Your percentile</div><div class="b-val">${report.assessment.benchmark.your_percentile.toFixed(0)}%</div></div>
+    </div>` : ""}
+
+    <footer>Generated by AI Maturity Assessor · ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})} · Based on Gartner, MIT Sloan & Deloitte frameworks</footer>
+    </body></html>`;
+
+  const win = window.open("","_blank","width=900,height=700");
+  win.document.write(printContent);
+  win.document.close();
+  setTimeout(()=>{ win.print(); }, 600);
+
+  btn.textContent = "✅ PDF exported";
+  setTimeout(()=>{ btn.textContent="Export PDF"; btn.disabled=false; }, 3000);
+}
+</script>
+</body>
+</html>

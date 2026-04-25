@@ -1,0 +1,24 @@
+{
+  "n_companies": 1000,
+  "n_sectors": 10,
+  "n_sizes": 5,
+  "n_outliers": 50,
+  "score_stats": {
+    "mean": 3.10507,
+    "std": 0.5682526781337737,
+    "min": 1.75,
+    "max": 4.62
+  },
+  "framework_dimensions": [
+    "data",
+    "talent",
+    "technology",
+    "strategy",
+    "processes"
+  ],
+  "n_questions": 25,
+  "generation_params": {
+    "within_dim_corr": 0.55,
+    "cross_dim_corr": 0.25
+  }
+}
