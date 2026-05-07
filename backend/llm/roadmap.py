@@ -14,6 +14,7 @@ dependencies. The LLM layer can enrich descriptions when available.
 
 import os
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 from dataclasses import dataclass, asdict
@@ -536,6 +537,168 @@ def _executive_summary(score: float, level: MaturityLevel,
         f"momentum toward the next maturity level."
     )
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Health Summary Report
+# ---------------------------------------------------------------------------
+
+_DIM_HEALTH_THRESHOLDS = {
+    "healthy":  3.5,
+    "fair":     2.5,
+    "at_risk":  1.5,
+}
+
+_HEALTH_COLORS = {
+    "excellent": "#0d9488",
+    "good":      "#16a34a",
+    "fair":      "#ca8a04",
+    "poor":      "#ea580c",
+    "critical":  "#dc2626",
+}
+
+_DIM_HEALTH_COLORS = {
+    "healthy":  "#16a34a",
+    "fair":     "#ca8a04",
+    "at_risk":  "#ea580c",
+    "critical": "#dc2626",
+}
+
+
+def _dim_health_status(score: float) -> str:
+    if score >= _DIM_HEALTH_THRESHOLDS["healthy"]:
+        return "healthy"
+    if score >= _DIM_HEALTH_THRESHOLDS["fair"]:
+        return "fair"
+    if score >= _DIM_HEALTH_THRESHOLDS["at_risk"]:
+        return "at_risk"
+    return "critical"
+
+
+def _overall_health_status(score: float) -> str:
+    if score >= 4.3:
+        return "excellent"
+    if score >= 3.5:
+        return "good"
+    if score >= 2.5:
+        return "fair"
+    if score >= 1.5:
+        return "poor"
+    return "critical"
+
+
+def generate_health_summary(
+    dimension_scores: Dict[str, float],
+    overall_score: float,
+    what_if_results: Optional[List[Dict]] = None,
+    benchmark: Optional[Dict] = None,
+    sector: Optional[str] = None,
+) -> Dict:
+    """
+    Generate a concise health summary of an organization's AI maturity.
+
+    Returns a structured snapshot with per-dimension health indicators,
+    severity alerts, the single highest-impact action, and an overall
+    health status.
+    """
+    health_status = _overall_health_status(overall_score)
+    level = classify_maturity(overall_score)
+
+    # Per-dimension health
+    dim_health = []
+    alerts = []
+    for dim in FRAMEWORK:
+        score = dimension_scores.get(dim.id, 0.0)
+        status = _dim_health_status(score)
+        dim_health.append({
+            "dimension_id": dim.id,
+            "dimension_name": dim.name,
+            "score": round(score, 2),
+            "status": status,
+            "color": _DIM_HEALTH_COLORS[status],
+        })
+        if status in ("at_risk", "critical"):
+            severity = "critical" if status == "critical" else "high"
+            alerts.append({
+                "severity": severity,
+                "dimension_id": dim.id,
+                "dimension_name": dim.name,
+                "score": round(score, 2),
+                "message": (
+                    f"{dim.name} scores {score:.1f}/5 — "
+                    f"{'critically low' if severity == 'critical' else 'below the recommended threshold'}. "
+                    f"This is limiting your overall AI progress."
+                ),
+            })
+
+    # Sort alerts: critical first
+    alerts.sort(key=lambda a: 0 if a["severity"] == "critical" else 1)
+
+    # Top recommended action: dimension with highest what-if gain, or lowest score
+    top_action = None
+    if what_if_results:
+        best = max(what_if_results, key=lambda w: w.get("delta", 0))
+        top_action = {
+            "dimension_id": best["dimension_id"],
+            "dimension_name": best["dimension_name"],
+            "title": _top_initiative_title(best["dimension_id"], dimension_scores.get(best["dimension_id"], 1.0)),
+            "expected_score_gain": round(best.get("delta", 0), 3),
+        }
+    else:
+        weakest_id, weakest_score = min(dimension_scores.items(), key=lambda x: x[1])
+        weakest_dim = next(d for d in FRAMEWORK if d.id == weakest_id)
+        top_action = {
+            "dimension_id": weakest_id,
+            "dimension_name": weakest_dim.name,
+            "title": _top_initiative_title(weakest_id, weakest_score),
+            "expected_score_gain": None,
+        }
+
+    # Improvement potential: score gain if all at-risk dims move to 3.5
+    improvement_potential = sum(
+        max(0.0, 3.5 - dimension_scores.get(d.id, 0.0)) * d.weight
+        for d in FRAMEWORK
+    )
+
+    # Headline
+    at_risk_count = sum(1 for d in dim_health if d["status"] in ("at_risk", "critical"))
+    if at_risk_count == 0:
+        headline = f"Your AI health is {health_status} — all dimensions are on track"
+    elif at_risk_count == 1:
+        headline = f"Your AI health is {health_status} — 1 dimension needs attention"
+    else:
+        headline = f"Your AI health is {health_status} — {at_risk_count} dimensions need attention"
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "overall_score": round(overall_score, 3),
+        "maturity_level": level.value,
+        "health_status": health_status,
+        "health_color": _HEALTH_COLORS[health_status],
+        "summary_headline": headline,
+        "dimension_health": dim_health,
+        "alerts": alerts,
+        "top_action": top_action,
+        "improvement_potential": round(improvement_potential, 3),
+        "benchmark_percentile": benchmark.get("your_percentile") if benchmark else None,
+        "sector": sector,
+    }
+
+
+def _top_initiative_title(dim_id: str, dim_score: float) -> str:
+    """Return the title of the highest-priority initiative for a dimension."""
+    level = _level_for_dimension(dim_score)
+    initiatives = INITIATIVES.get(dim_id, {}).get(level, [])
+    if initiatives:
+        return initiatives[0]["title"]
+    # Fall back to previous level if current level has no initiatives
+    levels_order = list(MaturityLevel)
+    idx = levels_order.index(level)
+    if idx > 0:
+        prev = INITIATIVES.get(dim_id, {}).get(levels_order[idx - 1], [])
+        if prev:
+            return prev[0]["title"]
+    return "Review and strengthen this dimension"
 
 
 # ---------------------------------------------------------------------------

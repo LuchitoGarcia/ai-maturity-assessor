@@ -33,7 +33,7 @@ from ml.framework import (
     get_question_to_dimension_map,
 )
 from ml.explainer import MaturityExplainer
-from llm.roadmap import generate_roadmap
+from llm.roadmap import generate_roadmap, generate_health_summary
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +278,23 @@ def get_sector_benchmark(sector: str):
             detail=f"Unknown sector '{sector}'. Available: {list(bms.keys())}",
         )
     return {"sector": sector, **bms[sector]}
+
+
+@app.post("/api/health_summary")
+def health_summary(req: AnswersRequest):
+    """Single-call AI health summary: overall status, per-dimension indicators, alerts and top action."""
+    explainer = get_explainer()
+    predicted = explainer.predict(req.answers)
+    dim_scores = _compute_dimension_scores(req.answers)
+    benchmark = _benchmark_for_sector(req.sector, predicted)
+    what_ifs = explainer.all_what_ifs(req.answers, delta=1.0)
+    return generate_health_summary(
+        dimension_scores=dim_scores,
+        overall_score=predicted,
+        what_if_results=what_ifs,
+        benchmark=benchmark,
+        sector=req.sector,
+    )
 
 
 @app.post("/api/full_report")

@@ -112,6 +112,32 @@
   <!-- Body -->
   <div id="pdf-content" class="max-w-5xl mx-auto px-6 py-10 space-y-8">
 
+    <!-- Health Summary -->
+    <div class="card p-6" id="res-health-summary" style="display:none">
+      <div class="flex justify-between items-center mb-4">
+        <div>
+          <h3 class="text-base font-bold text-slate-800">AI Health Summary</h3>
+          <p id="res-health-generated" class="text-xs text-slate-400 mt-0.5"></p>
+        </div>
+        <span id="res-health-badge" class="text-sm font-semibold px-4 py-1.5 rounded-full"></span>
+      </div>
+      <p id="res-health-headline" class="text-sm font-medium text-slate-700 mb-5"></p>
+      <div class="grid grid-cols-5 gap-3 mb-5" id="res-health-dims"></div>
+      <div id="res-health-alerts" class="mb-5"></div>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
+          <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">Top recommended action</div>
+          <div id="res-health-action-title" class="text-sm font-semibold text-slate-800 mb-1"></div>
+          <div id="res-health-action-sub" class="text-xs text-slate-500"></div>
+        </div>
+        <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
+          <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">Improvement potential</div>
+          <div id="res-health-potential" class="text-2xl font-bold text-slate-800"></div>
+          <div class="text-xs text-slate-500">pts if all weak areas reach threshold</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Radar + Score cards row -->
     <div class="grid md:grid-cols-5 gap-6">
       <div class="card p-6 md:col-span-3">
@@ -344,15 +370,17 @@ async function submitAssessment() {
   msgEl.textContent = LOADING_MSGS[0];
   const iv = setInterval(()=>{ msgIdx=(msgIdx+1)%LOADING_MSGS.length; msgEl.textContent=LOADING_MSGS[msgIdx]; }, 1200);
   try {
-    const res = await fetch(`${API_BASE}/full_report`, {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({answers, sector:meta.sector||null, company_size:meta.company_size||null})
-    });
-    if(!res.ok) throw new Error(await res.text());
-    report = await res.json();
+    const payload = {answers, sector:meta.sector||null, company_size:meta.company_size||null};
+    const [fullRes, healthRes] = await Promise.all([
+      fetch(`${API_BASE}/full_report`,      {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}),
+      fetch(`${API_BASE}/health_summary`,   {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}),
+    ]);
+    if(!fullRes.ok) throw new Error(await fullRes.text());
+    report = await fullRes.json();
+    const healthSummary = healthRes.ok ? await healthRes.json() : null;
     clearInterval(iv);
     renderResults();
+    if (healthSummary) renderHealthSummary(healthSummary);
     show("screen-results");
     window.scrollTo(0,0);
   } catch(e) {
@@ -362,6 +390,61 @@ async function submitAssessment() {
     errEl.textContent = "Error: " + e.message;
     errEl.style.display = "block";
   }
+}
+
+// ─── Health Summary rendering ─────────────────────────────────────────────────
+function renderHealthSummary(hs) {
+  document.getElementById("res-health-summary").style.display = "block";
+
+  const dt = new Date(hs.generated_at);
+  document.getElementById("res-health-generated").textContent =
+    "Generated " + dt.toLocaleString("en-GB", {day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}) + " UTC";
+
+  const badge = document.getElementById("res-health-badge");
+  badge.textContent = hs.health_status.charAt(0).toUpperCase() + hs.health_status.slice(1);
+  badge.style.background = hs.health_color + "20";
+  badge.style.color = hs.health_color;
+  badge.style.border = "1px solid " + hs.health_color + "40";
+
+  document.getElementById("res-health-headline").textContent = hs.summary_headline;
+
+  // Per-dimension indicators
+  const STATUS_LABELS = {healthy:"Healthy",fair:"Fair",at_risk:"At Risk",critical:"Critical"};
+  document.getElementById("res-health-dims").innerHTML = hs.dimension_health.map(d => `
+    <div class="text-center">
+      <div class="w-10 h-10 rounded-full mx-auto mb-2 flex items-center justify-center font-bold text-sm text-white"
+           style="background:${d.color}">${d.score.toFixed(1)}</div>
+      <div class="text-xs font-medium text-slate-700 truncate">${d.dimension_name.split(" ")[0]}</div>
+      <div class="text-xs mt-0.5" style="color:${d.color}">${STATUS_LABELS[d.status]||d.status}</div>
+    </div>`).join("");
+
+  // Alerts
+  const alertsEl = document.getElementById("res-health-alerts");
+  if (!hs.alerts || hs.alerts.length === 0) {
+    alertsEl.innerHTML = '<p class="text-sm text-green-700 bg-green-50 border border-green-100 rounded-xl px-4 py-3">No critical alerts — all dimensions are within acceptable range.</p>';
+  } else {
+    alertsEl.innerHTML = hs.alerts.map(a => {
+      const isCritical = a.severity === "critical";
+      return `<div class="flex gap-3 items-start ${isCritical?"bg-red-50 border-red-100":"bg-amber-50 border-amber-100"} border rounded-xl px-4 py-3 mb-2">
+        <span class="text-base mt-0.5">${isCritical?"🔴":"🟡"}</span>
+        <div>
+          <span class="text-xs font-semibold uppercase tracking-wide ${isCritical?"text-red-700":"text-amber-700"}">${a.severity}</span>
+          <p class="text-sm text-slate-700 mt-0.5">${a.message}</p>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  // Top action
+  document.getElementById("res-health-action-title").textContent = hs.top_action.title;
+  const actionSub = hs.top_action.expected_score_gain != null
+    ? `${hs.top_action.dimension_name} · Expected gain: +${hs.top_action.expected_score_gain.toFixed(3)} pts`
+    : `Focus area: ${hs.top_action.dimension_name}`;
+  document.getElementById("res-health-action-sub").textContent = actionSub;
+
+  // Improvement potential
+  document.getElementById("res-health-potential").textContent =
+    "+" + hs.improvement_potential.toFixed(2);
 }
 
 // ─── Results rendering ────────────────────────────────────────────────────────

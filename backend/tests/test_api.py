@@ -139,3 +139,69 @@ def test_benchmark_endpoint(client):
 def test_benchmark_unknown_sector(client):
     r = client.get("/api/benchmark/__unknown__")
     assert r.status_code == 404
+
+
+def test_health_summary_structure(client, sample_payload):
+    _skip_if_no_artifacts()
+    r = client.post("/api/health_summary", json=sample_payload)
+    assert r.status_code == 200
+    body = r.json()
+    required_keys = {
+        "generated_at", "overall_score", "maturity_level",
+        "health_status", "health_color", "summary_headline",
+        "dimension_health", "alerts", "top_action",
+        "improvement_potential", "benchmark_percentile", "sector",
+    }
+    assert required_keys <= set(body.keys())
+
+
+def test_health_summary_dimension_health(client, sample_payload):
+    _skip_if_no_artifacts()
+    r = client.post("/api/health_summary", json=sample_payload)
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["dimension_health"]) == 5
+    for d in body["dimension_health"]:
+        assert d["status"] in ("healthy", "fair", "at_risk", "critical")
+        assert 1.0 <= d["score"] <= 5.0
+
+
+def test_health_summary_score_range(client, sample_payload):
+    _skip_if_no_artifacts()
+    r = client.post("/api/health_summary", json=sample_payload)
+    assert r.status_code == 200
+    body = r.json()
+    assert 1.0 <= body["overall_score"] <= 5.0
+    assert body["health_status"] in ("excellent", "good", "fair", "poor", "critical")
+
+
+def test_health_summary_top_action(client, sample_payload):
+    _skip_if_no_artifacts()
+    r = client.post("/api/health_summary", json=sample_payload)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["top_action"]["dimension_id"] in ("data", "talent", "technology", "strategy", "processes")
+    assert isinstance(body["top_action"]["title"], str)
+    assert len(body["top_action"]["title"]) > 0
+
+
+def test_health_summary_improvement_potential_non_negative(client, sample_payload):
+    _skip_if_no_artifacts()
+    r = client.post("/api/health_summary", json=sample_payload)
+    assert r.status_code == 200
+    assert r.json()["improvement_potential"] >= 0.0
+
+
+def test_health_summary_with_sector_sets_percentile(client, sample_payload):
+    _skip_if_no_artifacts()
+    r = client.post("/api/health_summary", json=sample_payload)
+    assert r.status_code == 200
+    body = r.json()
+    if body["benchmark_percentile"] is not None:
+        assert 0.0 <= body["benchmark_percentile"] <= 100.0
+
+
+def test_health_summary_missing_answers_returns_422(client):
+    _skip_if_no_artifacts()
+    r = client.post("/api/health_summary", json={"answers": {"d1_q1": 3}})
+    assert r.status_code == 422
